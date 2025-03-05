@@ -79,17 +79,18 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
         ui.add_space(10.0);
 
         ui.columns(2, |columns| {
-            let reserved_height = 50.0 + // Build buttons (approx, including padding)
-                10.0 + // Space after buttons
-                50.0 + // Build Preview (approx, growing with content)
-                10.0 + // Space after preview
-                50.0 + // Presets (approx, one line, including padding)
-                10.0 + // Space after presets
-                50.0 + // Build output (approx, growing with content)
-                10.0 + // Space after output
-                30.0 + // Solana CLI version
-                20.0; // Minimal whitespace buffer
-            let pane_height = columns[0].available_height() - reserved_height;
+            // let reserved_height = 50.0 + // Build buttons (approx, including padding)
+            //     10.0 + // Space after buttons
+            //     50.0 + // Build Preview (approx, growing with content)
+            //     10.0 + // Space after preview
+            //     150.0 + // Presets (approx, one line, including padding)
+            //     10.0 + // Space after presets
+            //     150.0 + // Build output (approx, growing with content)
+            //     10.0 + // Space after output
+            //     30.0 + // Solana CLI version
+            //     20.0; // Minimal whitespace buffer
+            // let pane_height = columns[0].available_height() - reserved_height;
+            let pane_height: f32 = 250.0;
 
             columns[0].group(|ui| {
                 ui.label("Programs:");
@@ -281,7 +282,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                     egui::ScrollArea::vertical()
                         .id_salt("build_preview")
                         .max_height(150.0)
-                        .auto_shrink([false, true])
+                        .auto_shrink([false, false])
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
                             ui.label("No programs selected for build.");
@@ -290,7 +291,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                     egui::ScrollArea::vertical()
                         .id_salt("build_preview")
                         .max_height(150.0)
-                        .auto_shrink([false, true])
+                        .auto_shrink([false, false])
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
                             ui.label(build_preview);
@@ -299,7 +300,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
             });
         });
 
-        ui.add_space(10.0);
+        ui.add_space(5.0);
 
         ui.horizontal(|ui| {
             ui.label("Presets:");
@@ -332,21 +333,25 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
             }
         });
 
-        ui.add_space(10.0);
+        ui.add_space(5.0);
 
         ui.group(|ui| {
             ui.label("Build Output:");
             egui::ScrollArea::vertical()
                 .id_salt("build_output")
                 .max_height(150.0)
-                .auto_shrink([false, true])
+                .auto_shrink([false, false])
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    ui.label(&app.build_output);
+                    if app.build_output.is_empty() {
+                        ui.label("No build output yet.");
+                    } else {
+                        ui.label(&app.build_output);
+                    }
                 });
         });
 
-        ui.add_space(10.0);
+        ui.add_space(5.0);
 
         // Solana CLI version below Build Output
         ui.horizontal(|ui| {
