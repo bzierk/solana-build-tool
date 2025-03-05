@@ -51,9 +51,18 @@ fn scan_programs() -> Vec<Program> {
                 .expect("Failed to get parent directory")
                 .to_path_buf();
 
+            let features = p
+                .features
+                .iter()
+                .map(|(name, deps)| Feature {
+                    name: name.clone(),
+                    sub_features: deps.clone(),
+                })
+                .collect();
+
             Program {
                 name: p.name.clone(),
-                features: p.features.keys().cloned().collect(),
+                features,
                 selected: Vec::new(),
                 path: program_path,
             }
@@ -62,9 +71,15 @@ fn scan_programs() -> Vec<Program> {
 }
 
 #[derive(Clone)]
+struct Feature {
+    name: String,
+    sub_features: Vec<String>,
+}
+
+#[derive(Clone)]
 struct Program {
     name: String,
-    features: Vec<String>,
+    features: Vec<Feature>,
     selected: Vec<bool>,
     path: PathBuf,
 }
@@ -102,7 +117,7 @@ impl eframe::App for BuildTool {
                                     old_program
                                         .features
                                         .iter()
-                                        .position(|of| of == f)
+                                        .position(|of| of.name == f.name)
                                         .map(|i| {
                                             old_program.selected.get(i).copied().unwrap_or(false)
                                         })
@@ -116,9 +131,7 @@ impl eframe::App for BuildTool {
             });
             ui.add_space(10.0);
 
-            // Two-column layout
             ui.columns(2, |columns| {
-                // Left column: Program list
                 columns[0].group(|ui| {
                     ui.label("Programs:");
                     egui::ScrollArea::vertical()
@@ -139,7 +152,6 @@ impl eframe::App for BuildTool {
                         });
                 });
 
-                // Right column: Feature selection
                 columns[1].group(|ui| {
                     ui.label("Features:");
                     if let Some(selected_idx) = self.selected_program {
@@ -152,7 +164,17 @@ impl eframe::App for BuildTool {
                             .max_height(ui.available_height() - 50.0)
                             .show(ui, |ui| {
                                 for (i, feature) in program.features.iter().enumerate() {
-                                    ui.checkbox(&mut program.selected[i], feature);
+                                    let mut label = egui::RichText::new(&feature.name);
+                                    if !feature.sub_features.is_empty() {
+                                        label = label.underline(); // Visual cue for hoverable info
+                                    }
+                                    let checkbox = ui.checkbox(&mut program.selected[i], label);
+                                    if !feature.sub_features.is_empty() {
+                                        checkbox.on_hover_text(format!(
+                                            "Includes:\n{}",
+                                            feature.sub_features.join("\n")
+                                        ));
+                                    }
                                 }
                             });
                     } else {
@@ -174,7 +196,7 @@ impl eframe::App for BuildTool {
                             .iter()
                             .zip(&program.selected)
                             .filter(|(_, &sel)| sel)
-                            .map(|(f, _)| f.clone())
+                            .map(|(f, _)| f.name.clone())
                             .collect();
 
                         if !selected_features.is_empty() {
