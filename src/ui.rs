@@ -79,17 +79,6 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
         ui.add_space(5.0);
 
         ui.columns(2, |columns| {
-            // let reserved_height = 50.0 + // Build buttons (approx, including padding)
-            //     10.0 + // Space after buttons
-            //     50.0 + // Build Preview (approx, growing with content)
-            //     10.0 + // Space after preview
-            //     150.0 + // Presets (approx, one line, including padding)
-            //     10.0 + // Space after presets
-            //     150.0 + // Build output (approx, growing with content)
-            //     10.0 + // Space after output
-            //     30.0 + // Solana CLI version
-            //     20.0; // Minimal whitespace buffer
-            // let pane_height = columns[0].available_height() - reserved_height;
             let pane_height: f32 = 250.0;
 
             columns[0].group(|ui| {
@@ -144,42 +133,99 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
 
         ui.horizontal(|ui| {
             ui.label("Presets:");
-            for preset in app.presets.iter() {
-                let button = ui.button(&preset.name);
-                let clicked = button.clicked();
-                let details = preset
-                    .programs
-                    .iter()
-                    .map(|(prog, feats)| {
-                        if feats.is_empty() {
-                            prog.clone()
-                        } else {
-                            format!("{}: {}", prog, feats.join(", "))
-                        }
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n");
-                button.on_hover_text(format!("Contains:\n{}", details));
-                if clicked {
-                    // Instead of building, apply the preset's selections
-                    for (prog_name, features) in &preset.programs {
-                        if let Some(program) =
-                            app.programs.iter_mut().find(|p| p.name == *prog_name)
-                        {
-                            program.selected.clear();
-                            program.selected.resize(program.features.len(), false);
-                            for feature in features {
-                                if let Some(idx) =
-                                    program.features.iter().position(|f| f.name == *feature)
+        });
+
+        let mut preset_to_remove: Option<usize> = None;
+
+        // Use ScrollArea::horizontal for scrollable presets rather than wrapping
+        egui::ScrollArea::horizontal()
+            .id_salt("presets_scroll")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for (i, preset) in app.presets.iter().enumerate() {
+                        ui.add_space(4.0);
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                        let button = ui.button(&preset.name);
+                        let clicked = button.clicked();
+                        let details = preset
+                            .programs
+                            .iter()
+                            .map(|(prog, feats)| {
+                                if feats.is_empty() {
+                                    prog.clone()
+                                } else {
+                                    format!("{}: {}", prog, feats.join(", "))
+                                }
+                            })
+                            .collect::<Vec<String>>()
+                            .join("\n");
+                        button.on_hover_text(format!("Contains:\n{}", details));
+                        if clicked {
+                            for (prog_name, features) in &preset.programs {
+                                if let Some(program) =
+                                    app.programs.iter_mut().find(|p| p.name == *prog_name)
                                 {
-                                    program.selected[idx] = true;
+                                    program.selected.clear();
+                                    program.selected.resize(program.features.len(), false);
+                                    for feature in features {
+                                        if let Some(idx) =
+                                            program.features.iter().position(|f| f.name == *feature)
+                                        {
+                                            program.selected[idx] = true;
+                                        }
+                                    }
                                 }
                             }
                         }
+
+                        let delete_confirmation_id =
+                            egui::Id::new(format!("delete_confirmation_{}", i));
+                        if ui.small_button("🗑").on_hover_text("Delete Preset").clicked() {
+                            ctx.memory_mut(|mem| mem.data.insert_temp(delete_confirmation_id, true));
+                        }
+
+                        let mut show_delete_confirmation = ctx
+                            .memory(|mem| mem.data.get_temp(delete_confirmation_id).unwrap_or(false));
+                        if show_delete_confirmation {
+                            egui::Window::new("Confirm Delete")
+                                .collapsible(false)
+                                .resizable(false)
+                                .show(ctx, |ui| {
+                                    ui.label(format!(
+                                        "Are you sure you want to delete preset '{}'?",
+                                        preset.name
+                                    ));
+                                    ui.horizontal(|ui| {
+                                        if ui.button("Yes").clicked() {
+                                            preset_to_remove = Some(i);
+                                            show_delete_confirmation = false;
+                                            ctx.memory_mut(|mem| {
+                                                mem.data.remove::<bool>(delete_confirmation_id)
+                                            });
+                                        }
+                                        ui.add_space(10.0);
+                                        if ui.button("No").clicked() {
+                                            show_delete_confirmation = false;
+                                            ctx.memory_mut(|mem| {
+                                                mem.data.remove::<bool>(delete_confirmation_id)
+                                            });
+                                        }
+                                    });
+                                });
+                        }
+                    });
+                        });
                     }
-                }
+                });
+            });
+
+        if let Some(idx) = preset_to_remove {
+            app.presets.remove(idx);
+            if let Ok(json) = serde_json::to_string_pretty(&app.presets) {
+                let _ = std::fs::write("presets.json", json);
             }
-        });
+        }
 
         ui.add_space(5.0);
 
