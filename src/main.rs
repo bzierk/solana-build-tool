@@ -1,12 +1,12 @@
 use eframe::egui;
 use std::fs;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::channel;
 
 mod build;
 mod model;
 mod ui;
 
-use build::{scan_programs, BuildSender};
+use build::scan_programs;
 use model::BuildTool;
 use ui::render_ui;
 
@@ -31,7 +31,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size(egui::Vec2::new(800.0, 600.0)),
+        viewport: egui::ViewportBuilder::default().with_inner_size(egui::Vec2::new(800.0, 700.0)),
         ..Default::default()
     };
     eframe::run_native(

@@ -1,4 +1,5 @@
 use eframe::egui;
+use std::process::Command;
 use std::thread;
 
 use crate::build::{build_all, build_preset, run_build};
@@ -78,11 +79,23 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
         ui.add_space(10.0);
 
         ui.columns(2, |columns| {
+            let reserved_height = 50.0 + // Build buttons (approx, including padding)
+                10.0 + // Space after buttons
+                50.0 + // Build Preview (approx, growing with content)
+                10.0 + // Space after preview
+                50.0 + // Presets (approx, one line, including padding)
+                10.0 + // Space after presets
+                50.0 + // Build output (approx, growing with content)
+                10.0 + // Space after output
+                30.0 + // Solana CLI version
+                20.0; // Minimal whitespace buffer
+            let pane_height = columns[0].available_height() - reserved_height;
+
             columns[0].group(|ui| {
                 ui.label("Programs:");
                 egui::ScrollArea::vertical()
                     .id_salt("program_list")
-                    .max_height(ui.available_height() - 50.0)
+                    .max_height(pane_height.max(200.0))
                     .show(ui, |ui| {
                         for (i, program) in app.programs.iter().enumerate() {
                             if ui
@@ -104,7 +117,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                     }
                     egui::ScrollArea::vertical()
                         .id_salt("feature_list")
-                        .max_height(ui.available_height() - 50.0)
+                        .max_height(pane_height.max(200.0))
                         .show(ui, |ui| {
                             for (i, feature) in program.features.iter().enumerate() {
                                 let mut label = egui::RichText::new(&feature.name);
@@ -169,6 +182,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
 
             if show_preset_popup {
                 let preset_name_id = egui::Id::new("preset_name_input");
+
                 let mut preset_name = ctx
                     .data_mut(|data| data.get_temp::<String>(preset_name_id).unwrap_or_default());
 
@@ -179,6 +193,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                         ui.horizontal(|ui| {
                             ui.label("Preset Name:");
                             let response = ui.text_edit_singleline(&mut preset_name);
+
                             if response.changed() {
                                 ctx.data_mut(|data| {
                                     data.insert_temp(preset_name_id, preset_name.clone());
@@ -189,7 +204,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                             let preset_programs: Vec<(String, Vec<String>)> = app
                                 .programs
                                 .iter()
-                                .filter(|p| !p.selected.iter().all(|&s| !s))
+                                .filter(|p| !p.selected.iter().all(|&s| !s)) // At least one feature selected
                                 .map(|p| {
                                     let selected_features = p
                                         .features
@@ -206,25 +221,26 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                                     name: preset_name.clone(),
                                     programs: preset_programs.clone(),
                                 });
-                                // Save presets to file
-                                if let Ok(json) = serde_json::to_string_pretty(&app.presets) {
-                                    let _ = std::fs::write("presets.json", json);
-                                }
                                 println!(
                                     "Saved preset: {} with {:?}",
                                     preset_name, preset_programs
-                                );
+                                ); // Debug
+                                if let Ok(json) = serde_json::to_string_pretty(&app.presets) {
+                                    let _ = std::fs::write("presets.json", json);
+                                }
                             } else {
                                 println!(
                                     "No features selected to save for preset: {}",
                                     preset_name
-                                );
+                                ); // Debug
                             }
+
                             show_preset_popup = false;
                             ctx.data_mut(|data| {
                                 data.remove::<String>(preset_name_id);
                             });
                         }
+
                         if ui.button("Cancel").clicked() {
                             show_preset_popup = false;
                             ctx.data_mut(|data| {
@@ -242,13 +258,54 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
 
         ui.add_space(10.0);
 
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label("Build Preview:");
+                let build_preview = app
+                    .programs
+                    .iter()
+                    .filter(|p| !p.selected.iter().all(|&s| !s))
+                    .map(|p| {
+                        let selected_features = p
+                            .features
+                            .iter()
+                            .zip(&p.selected)
+                            .filter(|(_, &sel)| sel)
+                            .map(|(f, _)| f.name.clone())
+                            .collect::<Vec<String>>();
+                        format!("{}: {}", p.name, selected_features.join(", "))
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                if build_preview.is_empty() {
+                    egui::ScrollArea::vertical()
+                        .id_salt("build_preview")
+                        .max_height(150.0)
+                        .auto_shrink([false, true])
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.label("No programs selected for build.");
+                        });
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("build_preview")
+                        .max_height(150.0)
+                        .auto_shrink([false, true])
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.label(build_preview);
+                        });
+                }
+            });
+        });
+
+        ui.add_space(10.0);
+
         ui.horizontal(|ui| {
             ui.label("Presets:");
             for preset in app.presets.iter() {
                 let button = ui.button(&preset.name);
                 let clicked = button.clicked();
-
-                // Add tooltip with preset details
                 let details = preset
                     .programs
                     .iter()
@@ -261,9 +318,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                     })
                     .collect::<Vec<String>>()
                     .join("\n");
-
                 button.on_hover_text(format!("Contains:\n{}", details));
-
                 if clicked {
                     app.build_output.clear();
                     let tx = app.build_tx.clone();
@@ -289,6 +344,28 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                 .show(ui, |ui| {
                     ui.label(&app.build_output);
                 });
+        });
+
+        ui.add_space(10.0);
+
+        // Solana CLI version below Build Output
+        ui.horizontal(|ui| {
+            let version_output = Command::new("solana")
+                .arg("--version")
+                .output()
+                .map(|output| {
+                    if output.status.success() {
+                        String::from_utf8_lossy(&output.stdout).trim().to_string()
+                    } else {
+                        "Unknown".to_string()
+                    }
+                })
+                .unwrap_or_else(|_| "Not installed".to_string());
+            let version = version_output
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("Unknown");
+            ui.label(format!("Solana CLI version: {}", version));
         });
     });
 }
