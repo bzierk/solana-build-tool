@@ -4,6 +4,9 @@ use std::thread;
 use crate::build::{build_all, run_build};
 use crate::model::BuildTool;
 
+// Add this import for the file dialog
+use rfd::FileDialog;
+
 pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::Frame) {
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.horizontal(|ui| {
@@ -32,6 +35,71 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                 }
                 app.selected_program = None;
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                // Use a static ID for our window
+                let options_id = egui::Id::new("options_window");
+
+                if ui.button("Options").clicked() {
+                    // Set the window as open when the button is clicked
+                    ctx.memory_mut(|mem| mem.data.insert_temp(options_id, true));
+                }
+
+                // Check if the window should be shown
+                let mut show_window =
+                    ctx.memory(|mem| mem.data.get_temp(options_id).unwrap_or(false));
+
+                // Only show the window if it's supposed to be shown
+                if show_window {
+                    // Instead of using .open(), we'll manually handle the window state
+                    egui::Window::new("Build Options")
+                        .resizable(false)
+                        .show(ctx, |ui| {
+                            ui.label("TypeScript IDL Output Directory (-t):");
+
+                            // Get the current directory path for display
+                            let current_dir_str = app.build_dir.clone().unwrap_or_else(|| "Not set".to_string());
+                            
+                            // Display the current directory
+                            ui.label(&current_dir_str);
+                            
+                            // Add a button to open the folder picker
+                            if ui.button("Browse...").clicked() {
+                                // Open a folder picker dialog
+                                if let Some(path) = FileDialog::new()
+                                    .set_directory(std::env::current_dir().unwrap_or_default())
+                                    .set_title("Select TypeScript IDL Output Directory")
+                                    .pick_folder() 
+                                {
+                                    // Convert the path to a string
+                                    if let Some(path_str) = path.to_str() {
+                                        // Store the selected directory
+                                        app.build_dir = Some(path_str.to_string());
+                                    }
+                                }
+                            }
+
+                            ui.add_space(10.0);
+                            if ui.button("Clear").clicked() {
+                                app.build_dir = None;
+                            }
+
+                            ui.add_space(10.0);
+                            if ui.button("Save").clicked() {
+                                // The directory is already saved when selected
+                                // Mark the window as closed
+                                show_window = false;
+                            }
+
+                            // Add a close button in the corner
+                            if ui.button("X").clicked() {
+                                show_window = false;
+                            }
+                        });
+
+                    // Update the window state in memory
+                    ctx.memory_mut(|mem| mem.data.insert_temp(options_id, show_window));
+                }
+            });
         });
         ui.add_space(10.0);
 
@@ -83,6 +151,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                 }
             });
         });
+
         ui.add_space(10.0);
 
         ui.horizontal(|ui| {
@@ -90,24 +159,27 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                 app.build_output.clear();
                 let tx = app.build_tx.clone();
                 let programs = app.programs.clone();
+                let build_dir = app.build_dir.clone();
                 thread::spawn(move || {
-                    run_build(programs, tx);
+                    run_build(programs, tx, build_dir);
                 });
             }
             if ui.button("Build All (Prod)").clicked() {
                 app.build_output.clear();
                 let tx = app.build_tx.clone();
                 let programs = app.programs.clone();
+                let build_dir = app.build_dir.clone();
                 thread::spawn(move || {
-                    build_all(programs, tx, true);
+                    build_all(programs, tx, true, build_dir);
                 });
             }
             if ui.button("Build All (Default)").clicked() {
                 app.build_output.clear();
                 let tx = app.build_tx.clone();
                 let programs = app.programs.clone();
+                let build_dir = app.build_dir.clone();
                 thread::spawn(move || {
-                    build_all(programs, tx, false);
+                    build_all(programs, tx, false, build_dir);
                 });
             }
         });

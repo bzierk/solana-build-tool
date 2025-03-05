@@ -49,7 +49,7 @@ pub fn scan_programs() -> Vec<Program> {
         .collect()
 }
 
-pub fn run_build(programs: Vec<Program>, tx: BuildSender) {
+pub fn run_build(programs: Vec<Program>, tx: BuildSender, build_dir: Option<String>) {
     for program in programs {
         let selected_features: Vec<String> = program
             .features
@@ -61,10 +61,16 @@ pub fn run_build(programs: Vec<Program>, tx: BuildSender) {
 
         if !selected_features.is_empty() {
             let feature_args = selected_features.join(",");
-            let cmd = format!(
-                "anchor build -p {} -- --features {}",
-                program.name, feature_args
-            );
+            let cmd = match &build_dir {
+                Some(dir) => format!(
+                    "anchor build -p {} -t {} -- --features {}",
+                    program.name, dir, feature_args
+                ),
+                None => format!(
+                    "anchor build -p {} -- --features {}",
+                    program.name, feature_args
+                ),
+            };
 
             tx.send(format!(
                 "Running: {} (from {})",
@@ -73,18 +79,17 @@ pub fn run_build(programs: Vec<Program>, tx: BuildSender) {
             ))
             .unwrap();
 
-            let output = Command::new("anchor")
-                .args([
-                    "build",
-                    "-p",
-                    &program.name,
-                    "--",
-                    "--features",
-                    &feature_args,
-                ])
+            let mut command = Command::new("anchor");
+            command
+                .args(["build", "-p", &program.name])
                 .current_dir(&program.path)
-                .envs(std::env::vars())
-                .output();
+                .envs(std::env::vars());
+            if let Some(dir) = &build_dir {
+                command.args(["-t", dir]);
+            }
+            command.args(["--", "--features", &feature_args]);
+
+            let output = command.output();
 
             match output {
                 Ok(output) => {
@@ -112,12 +117,21 @@ pub fn run_build(programs: Vec<Program>, tx: BuildSender) {
     tx.send("Build complete.".to_string()).unwrap();
 }
 
-pub fn build_all(programs: Vec<Program>, tx: BuildSender, use_prod: bool) {
+pub fn build_all(
+    programs: Vec<Program>,
+    tx: BuildSender,
+    use_prod: bool,
+    build_dir: Option<String>,
+) {
     for program in programs {
-        let cmd = if use_prod {
-            format!("anchor build -p {} -- --features prod", program.name)
-        } else {
-            format!("anchor build -p {}", program.name)
+        let cmd = match (use_prod, &build_dir) {
+            (true, Some(dir)) => format!(
+                "anchor build -p {} -t {} -- --features prod",
+                program.name, dir
+            ),
+            (true, None) => format!("anchor build -p {} -- --features prod", program.name),
+            (false, Some(dir)) => format!("anchor build -p {} -t {}", program.name, dir),
+            (false, None) => format!("anchor build -p {}", program.name),
         };
 
         tx.send(format!(
@@ -127,19 +141,19 @@ pub fn build_all(programs: Vec<Program>, tx: BuildSender, use_prod: bool) {
         ))
         .unwrap();
 
-        let output = if use_prod {
-            Command::new("anchor")
-                .args(["build", "-p", &program.name, "--", "--features", "prod"])
-                .current_dir(&program.path)
-                .envs(std::env::vars())
-                .output()
-        } else {
-            Command::new("anchor")
-                .args(["build", "-p", &program.name])
-                .current_dir(&program.path)
-                .envs(std::env::vars())
-                .output()
-        };
+        let mut command = Command::new("anchor");
+        command
+            .args(["build", "-p", &program.name])
+            .current_dir(&program.path)
+            .envs(std::env::vars());
+        if let Some(dir) = &build_dir {
+            command.args(["-t", dir]);
+        }
+        if use_prod {
+            command.args(["--", "--features", "prod"]);
+        }
+
+        let output = command.output();
 
         match output {
             Ok(output) => {

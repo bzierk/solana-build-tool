@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 cargo_metadata = "0.19.2"
 eframe = "0.31.0"
+rfd = "0.15.2"

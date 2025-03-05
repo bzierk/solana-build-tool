@@ -1,11 +1,11 @@
 use eframe::egui;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 mod build;
 mod model;
 mod ui;
 
-use build::scan_programs;
+use build::{scan_programs, BuildSender};
 use model::BuildTool;
 use ui::render_ui;
 
@@ -18,6 +18,7 @@ fn main() -> Result<(), eframe::Error> {
         build_output: String::new(),
         build_rx: rx,
         build_tx: tx,
+        build_dir: None, // Initialize as None
     };
 
     let options = eframe::NativeOptions {

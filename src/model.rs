@@ -21,4 +21,5 @@ pub struct BuildTool {
     pub build_output: String,
     pub build_rx: Receiver<String>,
     pub build_tx: Sender<String>,
+    pub build_dir: Option<String>, // New field for -t flag
 }
