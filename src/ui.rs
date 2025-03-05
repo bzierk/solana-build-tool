@@ -2,7 +2,7 @@ use eframe::egui;
 use std::process::Command;
 use std::thread;
 
-use crate::build::{build_all, build_preset, run_build};
+use crate::build::{build_all, run_build};
 use crate::model::{BuildTool, Preset};
 use rfd::FileDialog;
 
@@ -76,7 +76,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                 }
             });
         });
-        ui.add_space(10.0);
+        ui.add_space(5.0);
 
         ui.columns(2, |columns| {
             // let reserved_height = 50.0 + // Build buttons (approx, including padding)
@@ -140,7 +140,48 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
             });
         });
 
-        ui.add_space(10.0);
+        ui.add_space(5.0);
+
+        ui.horizontal(|ui| {
+            ui.label("Presets:");
+            for preset in app.presets.iter() {
+                let button = ui.button(&preset.name);
+                let clicked = button.clicked();
+                let details = preset
+                    .programs
+                    .iter()
+                    .map(|(prog, feats)| {
+                        if feats.is_empty() {
+                            prog.clone()
+                        } else {
+                            format!("{}: {}", prog, feats.join(", "))
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                button.on_hover_text(format!("Contains:\n{}", details));
+                if clicked {
+                    // Instead of building, apply the preset's selections
+                    for (prog_name, features) in &preset.programs {
+                        if let Some(program) =
+                            app.programs.iter_mut().find(|p| p.name == *prog_name)
+                        {
+                            program.selected.clear();
+                            program.selected.resize(program.features.len(), false);
+                            for feature in features {
+                                if let Some(idx) =
+                                    program.features.iter().position(|f| f.name == *feature)
+                                {
+                                    program.selected[idx] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        ui.add_space(5.0);
 
         ui.horizontal(|ui| {
             if ui.button("Build").clicked() {
@@ -257,7 +298,7 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
             }
         });
 
-        ui.add_space(10.0);
+        ui.add_space(5.0);
 
         ui.group(|ui| {
             ui.horizontal(|ui| {
@@ -302,44 +343,11 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
 
         ui.add_space(5.0);
 
-        ui.horizontal(|ui| {
-            ui.label("Presets:");
-            for preset in app.presets.iter() {
-                let button = ui.button(&preset.name);
-                let clicked = button.clicked();
-                let details = preset
-                    .programs
-                    .iter()
-                    .map(|(prog, feats)| {
-                        if feats.is_empty() {
-                            prog.clone()
-                        } else {
-                            format!("{}: {}", prog, feats.join(", "))
-                        }
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n");
-                button.on_hover_text(format!("Contains:\n{}", details));
-                if clicked {
-                    app.build_output.clear();
-                    let tx = app.build_tx.clone();
-                    let programs = app.programs.clone();
-                    let preset = preset.clone();
-                    let build_dir = app.build_dir.clone();
-                    thread::spawn(move || {
-                        build_preset(preset, programs, tx, build_dir);
-                    });
-                }
-            }
-        });
-
-        ui.add_space(5.0);
-
         ui.group(|ui| {
             ui.label("Build Output:");
             egui::ScrollArea::vertical()
                 .id_salt("build_output")
-                .max_height(150.0)
+                .max_height(170.0)
                 .auto_shrink([false, false])
                 .stick_to_bottom(true)
                 .show(ui, |ui| {

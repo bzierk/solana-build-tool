@@ -1,9 +1,9 @@
-use cargo_metadata::{Metadata, MetadataCommand};
+use cargo_metadata::MetadataCommand;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::Sender;
 
-use crate::model::{Feature, Preset, Program};
+use crate::model::{Feature, Program};
 
 pub type BuildSender = Sender<String>;
 
@@ -175,77 +175,6 @@ pub fn build_all(
             Err(e) => {
                 tx.send(format!("Command failed: {}", e)).unwrap();
             }
-        }
-    }
-    tx.send("Build complete.".to_string()).unwrap();
-}
-
-pub fn build_preset(
-    preset: Preset,
-    programs: Vec<Program>,
-    tx: BuildSender,
-    build_dir: Option<String>,
-) {
-    for (preset_program_name, preset_features) in preset.programs {
-        if let Some(program) = programs.iter().find(|p| p.name == preset_program_name) {
-            let feature_args = preset_features.join(",");
-            let cmd = match &build_dir {
-                Some(dir) => format!(
-                    "anchor build -p {} -t {} -- --features {}",
-                    program.name, dir, feature_args
-                ),
-                None => format!(
-                    "anchor build -p {} -- --features {}",
-                    program.name, feature_args
-                ),
-            };
-
-            tx.send(format!(
-                "Running: {} (from {})",
-                cmd,
-                program.path.display()
-            ))
-            .unwrap();
-
-            let mut command = Command::new("anchor");
-            command
-                .args(["build", "-p", &program.name])
-                .current_dir(&program.path)
-                .envs(std::env::vars());
-            if let Some(dir) = &build_dir {
-                command.args(["-t", dir]);
-            }
-            command.args(["--", "--features", &feature_args]);
-
-            let output = command.output();
-
-            match output {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    if !stdout.is_empty() {
-                        tx.send(stdout.to_string()).unwrap();
-                    }
-                    if !stderr.is_empty() {
-                        tx.send(stderr.to_string()).unwrap();
-                    }
-                    if !output.status.success() {
-                        tx.send(format!("Build failed with code {:?}", output.status.code()))
-                            .unwrap();
-                    } else {
-                        tx.send("Build succeeded.".to_string()).unwrap();
-                    }
-                }
-                Err(e) => {
-                    tx.send(format!("Command failed: {}", e)).unwrap();
-                }
-            }
-        } else {
-            tx.send(format!(
-                "Program {} not found for preset",
-                preset_program_name
-            ))
-            .unwrap();
         }
     }
     tx.send("Build complete.".to_string()).unwrap();
