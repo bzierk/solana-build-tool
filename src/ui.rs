@@ -1,7 +1,7 @@
 use eframe::egui;
 use std::thread;
 
-use crate::build::run_build;
+use crate::build::{build_all, run_build};
 use crate::model::BuildTool;
 
 pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -85,14 +85,32 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
         });
         ui.add_space(10.0);
 
-        if ui.button("Build").clicked() {
-            app.build_output.clear();
-            let tx = app.build_tx.clone();
-            let programs = app.programs.clone();
-            thread::spawn(move || {
-                run_build(programs, tx);
-            });
-        }
+        ui.horizontal(|ui| {
+            if ui.button("Build").clicked() {
+                app.build_output.clear();
+                let tx = app.build_tx.clone();
+                let programs = app.programs.clone();
+                thread::spawn(move || {
+                    run_build(programs, tx);
+                });
+            }
+            if ui.button("Build All (Prod)").clicked() {
+                app.build_output.clear();
+                let tx = app.build_tx.clone();
+                let programs = app.programs.clone();
+                thread::spawn(move || {
+                    build_all(programs, tx, true);
+                });
+            }
+            if ui.button("Build All (Default)").clicked() {
+                app.build_output.clear();
+                let tx = app.build_tx.clone();
+                let programs = app.programs.clone();
+                thread::spawn(move || {
+                    build_all(programs, tx, false);
+                });
+            }
+        });
         ui.add_space(10.0);
 
         ui.group(|ui| {

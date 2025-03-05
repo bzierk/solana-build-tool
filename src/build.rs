@@ -111,3 +111,57 @@ pub fn run_build(programs: Vec<Program>, tx: BuildSender) {
     }
     tx.send("Build complete.".to_string()).unwrap();
 }
+
+pub fn build_all(programs: Vec<Program>, tx: BuildSender, use_prod: bool) {
+    for program in programs {
+        let cmd = if use_prod {
+            format!("anchor build -p {} -- --features prod", program.name)
+        } else {
+            format!("anchor build -p {}", program.name)
+        };
+
+        tx.send(format!(
+            "Running: {} (from {})",
+            cmd,
+            program.path.display()
+        ))
+        .unwrap();
+
+        let output = if use_prod {
+            Command::new("anchor")
+                .args(["build", "-p", &program.name, "--", "--features", "prod"])
+                .current_dir(&program.path)
+                .envs(std::env::vars())
+                .output()
+        } else {
+            Command::new("anchor")
+                .args(["build", "-p", &program.name])
+                .current_dir(&program.path)
+                .envs(std::env::vars())
+                .output()
+        };
+
+        match output {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stdout.is_empty() {
+                    tx.send(stdout.to_string()).unwrap();
+                }
+                if !stderr.is_empty() {
+                    tx.send(stderr.to_string()).unwrap();
+                }
+                if !output.status.success() {
+                    tx.send(format!("Build failed with code {:?}", output.status.code()))
+                        .unwrap();
+                } else {
+                    tx.send("Build succeeded.".to_string()).unwrap();
+                }
+            }
+            Err(e) => {
+                tx.send(format!("Command failed: {}", e)).unwrap();
+            }
+        }
+    }
+    tx.send("Build complete.".to_string()).unwrap();
+}
