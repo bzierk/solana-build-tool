@@ -1,4 +1,5 @@
 use eframe::egui;
+use std::fs;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 mod build;
@@ -12,13 +13,21 @@ use ui::render_ui;
 fn main() -> Result<(), eframe::Error> {
     let programs = scan_programs();
     let (tx, rx) = channel();
+
+    // Load presets from file, or use empty vec if file doesn’t exist
+    let presets = fs::read_to_string("presets.json")
+        .ok()
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_else(Vec::new);
+
     let app = BuildTool {
         programs,
         selected_program: None,
         build_output: String::new(),
         build_rx: rx,
         build_tx: tx,
-        build_dir: None, // Initialize as None
+        build_dir: None,
+        presets,
     };
 
     let options = eframe::NativeOptions {

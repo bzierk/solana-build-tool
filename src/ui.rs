@@ -1,10 +1,8 @@
 use eframe::egui;
 use std::thread;
 
-use crate::build::{build_all, run_build};
-use crate::model::BuildTool;
-
-// Add this import for the file dialog
+use crate::build::{build_all, build_preset, run_build};
+use crate::model::{BuildTool, Preset};
 use rfd::FileDialog;
 
 pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -36,67 +34,43 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                 app.selected_program = None;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                // Use a static ID for our window
                 let options_id = egui::Id::new("options_window");
-
                 if ui.button("Options").clicked() {
-                    // Set the window as open when the button is clicked
                     ctx.memory_mut(|mem| mem.data.insert_temp(options_id, true));
                 }
 
-                // Check if the window should be shown
                 let mut show_window =
                     ctx.memory(|mem| mem.data.get_temp(options_id).unwrap_or(false));
-
-                // Only show the window if it's supposed to be shown
                 if show_window {
-                    // Instead of using .open(), we'll manually handle the window state
                     egui::Window::new("Build Options")
                         .resizable(false)
                         .show(ctx, |ui| {
                             ui.label("TypeScript IDL Output Directory (-t):");
-
-                            // Get the current directory path for display
-                            let current_dir_str = app.build_dir.clone().unwrap_or_else(|| "Not set".to_string());
-                            
-                            // Display the current directory
-                            ui.label(&current_dir_str);
-                            
-                            // Add a button to open the folder picker
+                            let current_dir_str = app
+                                .build_dir
+                                .clone()
+                                .unwrap_or_else(|| "Not set".to_string());
+                            ui.label(current_dir_str);
                             if ui.button("Browse...").clicked() {
-                                // Open a folder picker dialog
                                 if let Some(path) = FileDialog::new()
                                     .set_directory(std::env::current_dir().unwrap_or_default())
                                     .set_title("Select TypeScript IDL Output Directory")
-                                    .pick_folder() 
+                                    .pick_folder()
                                 {
-                                    // Convert the path to a string
                                     if let Some(path_str) = path.to_str() {
-                                        // Store the selected directory
                                         app.build_dir = Some(path_str.to_string());
                                     }
                                 }
                             }
-
                             ui.add_space(10.0);
                             if ui.button("Clear").clicked() {
                                 app.build_dir = None;
                             }
-
                             ui.add_space(10.0);
-                            if ui.button("Save").clicked() {
-                                // The directory is already saved when selected
-                                // Mark the window as closed
-                                show_window = false;
-                            }
-
-                            // Add a close button in the corner
-                            if ui.button("X").clicked() {
+                            if ui.button("Close").clicked() {
                                 show_window = false;
                             }
                         });
-
-                    // Update the window state in memory
                     ctx.memory_mut(|mem| mem.data.insert_temp(options_id, show_window));
                 }
             });
@@ -182,7 +156,127 @@ pub fn render_ui(app: &mut BuildTool, ctx: &egui::Context, _frame: &mut eframe::
                     build_all(programs, tx, false, build_dir);
                 });
             }
+            if ui.button("Save Preset").clicked() {
+                let preset_popup_id = egui::Id::new("preset_popup_window");
+                ctx.memory_mut(|mem| mem.data.insert_temp(preset_popup_id, true));
+            }
+
+            let mut show_preset_popup = ctx.memory(|mem| {
+                mem.data
+                    .get_temp(egui::Id::new("preset_popup_window"))
+                    .unwrap_or(false)
+            });
+
+            if show_preset_popup {
+                let preset_name_id = egui::Id::new("preset_name_input");
+                let mut preset_name = ctx
+                    .data_mut(|data| data.get_temp::<String>(preset_name_id).unwrap_or_default());
+
+                egui::Window::new("Save Preset")
+                    .collapsible(false)
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Preset Name:");
+                            let response = ui.text_edit_singleline(&mut preset_name);
+                            if response.changed() {
+                                ctx.data_mut(|data| {
+                                    data.insert_temp(preset_name_id, preset_name.clone());
+                                });
+                            }
+                        });
+                        if ui.button("Save").clicked() && !preset_name.is_empty() {
+                            let preset_programs: Vec<(String, Vec<String>)> = app
+                                .programs
+                                .iter()
+                                .filter(|p| !p.selected.iter().all(|&s| !s))
+                                .map(|p| {
+                                    let selected_features = p
+                                        .features
+                                        .iter()
+                                        .zip(&p.selected)
+                                        .filter(|(_, &sel)| sel)
+                                        .map(|(f, _)| f.name.clone())
+                                        .collect::<Vec<String>>();
+                                    (p.name.clone(), selected_features)
+                                })
+                                .collect();
+                            if !preset_programs.is_empty() {
+                                app.presets.push(Preset {
+                                    name: preset_name.clone(),
+                                    programs: preset_programs.clone(),
+                                });
+                                // Save presets to file
+                                if let Ok(json) = serde_json::to_string_pretty(&app.presets) {
+                                    let _ = std::fs::write("presets.json", json);
+                                }
+                                println!(
+                                    "Saved preset: {} with {:?}",
+                                    preset_name, preset_programs
+                                );
+                            } else {
+                                println!(
+                                    "No features selected to save for preset: {}",
+                                    preset_name
+                                );
+                            }
+                            show_preset_popup = false;
+                            ctx.data_mut(|data| {
+                                data.remove::<String>(preset_name_id);
+                            });
+                        }
+                        if ui.button("Cancel").clicked() {
+                            show_preset_popup = false;
+                            ctx.data_mut(|data| {
+                                data.remove::<String>(preset_name_id);
+                            });
+                        }
+                    });
+
+                ctx.memory_mut(|mem| {
+                    mem.data
+                        .insert_temp(egui::Id::new("preset_popup_window"), show_preset_popup)
+                });
+            }
         });
+
+        ui.add_space(10.0);
+
+        ui.horizontal(|ui| {
+            ui.label("Presets:");
+            for preset in app.presets.iter() {
+                let button = ui.button(&preset.name);
+                let clicked = button.clicked();
+
+                // Add tooltip with preset details
+                let details = preset
+                    .programs
+                    .iter()
+                    .map(|(prog, feats)| {
+                        if feats.is_empty() {
+                            prog.clone()
+                        } else {
+                            format!("{}: {}", prog, feats.join(", "))
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+
+                button.on_hover_text(format!("Contains:\n{}", details));
+
+                if clicked {
+                    app.build_output.clear();
+                    let tx = app.build_tx.clone();
+                    let programs = app.programs.clone();
+                    let preset = preset.clone();
+                    let build_dir = app.build_dir.clone();
+                    thread::spawn(move || {
+                        build_preset(preset, programs, tx, build_dir);
+                    });
+                }
+            }
+        });
+
         ui.add_space(10.0);
 
         ui.group(|ui| {
